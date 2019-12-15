@@ -5,6 +5,7 @@ MidiDeviceManager module: integrates and coordinates other midi modules
  - Manages MidiDevice + MidiDeviceControl instances,
  - Saves & loads MidiDevice + MidiDeviceControl configuration to file
  - Trains new & existing MidiDeviceControl bindings
+
  */
 
 
@@ -19,10 +20,19 @@ const MidiDeviceManager = class {
     this._midiDevices = []; // available midi hardware is stored here
     this._isTrainingMode = false; // if true, changes the functionality within onInputMessage
     this._onTrained = () => {};
+    this._onSaved = () => {};
     //this.loadAll = this.loadAll.bind(this);
     this._midiDeviceControl_onChange = (e) => {
       console.log(e);
     }
+  }
+
+  get midiDevices() {
+    return this._midiDevices;
+  }
+
+  nextAvailableDeviceId() {
+    return Math.max(...this._midiDevices.map(o => o.id), 0) + 1;
   }
 
   /**
@@ -30,38 +40,54 @@ const MidiDeviceManager = class {
    * @return {[type]}            [description]
    * @param  {MidiAccess} midiAccess contains all info related to currently available MIDI hardware. Created by midi hardware module (e.g. the Web MIDI API)
    */
-  loadAll(midiAccess) {
+  async loadAll(midiAccess) {
     // load all config from file
-    let conf = MidiDeviceConfig.readConfig();
+    let conf;
+    await MidiDeviceConfig.read().then(value => {
+      conf = value;
+    });
 
     // get array of MidiDeviceControls for each MidiDevice from config
     for (let input of midiAccess.inputs.values()) {
       // if not already added
       if (this._midiDevices.filter(device => device.name == input.name).length == 0) {
-        let midiDeviceControls = [];
-        if (conf[input.name]) {
-          if (conf[input.name].controls) {
-            midiDeviceControls = conf[input.name].controls;
+        let savedDevice = {};
+        // check if it has config:
+        if (conf[input.manufacturer]) {
+          if (conf[input.manufacturer][input.name]) {
+            savedDevice = conf[input.manufacturer][input.name];
           }
         }
-
+        // console.dir(midiDeviceControls);
         // add new MidiDevice instance to MidiDeviceManager's collection
         this._midiDevices.push(new MidiDevice({
-          id: input.id,
+          id: this.nextAvailableDeviceId(),
           name: input.name,
           manufacturer: input.manufacturer,
-          midiDeviceControls: midiDeviceControls
+          //midiDeviceControls: midiDeviceControls,
+          midiDeviceControls: savedDevice.midiDeviceControls,
+          ui: savedDevice.ui
         }));
       }
     }
-
-    /** @todo: do output ports too? */
+    /** @todo: do output ports too? at the moment it's only doing pass-through */
     // for (let output of electronMidi.outputs.values()) {
     //
     // }
+  }
 
+  async saveAll() {
+    for (let midiDevice of this._midiDevices) {
+      // console.log(midiDevice.midiDeviceControls);
+      await MidiDeviceConfig.save(`${midiDevice.manufacturer}.${midiDevice.name}.midiDeviceControls`, midiDevice.midiDeviceControls);
+    }
+    this._onSaved();
+  }
+
+  saveDevice() {
 
   }
+
 
   get isTrainingMode() {
     return this._isTrainingMode;
@@ -73,6 +99,10 @@ const MidiDeviceManager = class {
    */
   set onTrained(fn) {
     this._onTrained = fn;
+  }
+
+  set onSaved(fn) {
+    this._onSaved = fn;
   }
 
   /**
@@ -87,10 +117,12 @@ const MidiDeviceManager = class {
   }
 
   /**
-   * Sets training mode to false, which prevents calling train(e) in the onMidiMessage handler
+   * - Sets training mode to false, which prevents calling train(e) in the onMidiMessage handler
+   * - Updates midi devices in the user config file
    */
   stopTraining() {
     this._isTrainingMode = false;
+    this.saveAll();
   }
 
   onInputMessage(e) {
@@ -105,6 +137,8 @@ const MidiDeviceManager = class {
     // console.log('midi out');
     // console.log(e);
   }
+
+
 
 
 }
