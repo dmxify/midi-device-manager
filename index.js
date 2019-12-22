@@ -14,6 +14,14 @@ const MidiDeviceConfig = require('../midi-device-config/index.js')
 const MidiDeviceTrainer = require('../midi-device-trainer/index.js')
 const midiDeviceTrainer = new MidiDeviceTrainer();
 
+const escapePeriod = function(str) {
+  str = str.replace(/\./g, '&#46;');
+  return str;
+}
+const unescapePeriod = function(str) {
+  str = str.replace(/&#46;/g, '\.');
+  return str;
+}
 
 const MidiDeviceManager = class {
   constructor() {
@@ -29,6 +37,14 @@ const MidiDeviceManager = class {
 
   get midiDevices() {
     return this._midiDevices;
+  }
+
+  getMidiDeviceById(midiDeviceId) {
+    for (let midiDevice of this._midiDevices) {
+      if (midiDevice.id == midiDeviceId) {
+        return midiDevice;
+      }
+    }
   }
 
   nextAvailableDeviceId() {
@@ -49,13 +65,14 @@ const MidiDeviceManager = class {
 
     // get array of MidiDeviceControls for each MidiDevice from config
     for (let input of midiAccess.inputs.values()) {
+      let manufacturer = escapePeriod(input.manufacturer);
       // if not already added
       if (this._midiDevices.filter(device => device.name == input.name).length == 0) {
         let savedDevice = {};
         // check if it has config:
-        if (conf[input.manufacturer]) {
-          if (conf[input.manufacturer][input.name]) {
-            savedDevice = conf[input.manufacturer][input.name];
+        if (conf[manufacturer]) {
+          if (conf[manufacturer][input.name]) {
+            savedDevice = conf[manufacturer][input.name];
           }
         }
         // console.dir(midiDeviceControls);
@@ -63,10 +80,10 @@ const MidiDeviceManager = class {
         this._midiDevices.push(new MidiDevice({
           id: this.nextAvailableDeviceId(),
           name: input.name,
-          manufacturer: input.manufacturer,
+          manufacturer: manufacturer,
           //midiDeviceControls: midiDeviceControls,
           midiDeviceControls: savedDevice.midiDeviceControls,
-          ui: savedDevice.ui
+          options: savedDevice.options
         }));
       }
     }
@@ -78,8 +95,8 @@ const MidiDeviceManager = class {
 
   async saveAll() {
     for (let midiDevice of this._midiDevices) {
-      // console.log(midiDevice.midiDeviceControls);
-      await MidiDeviceConfig.save(`${midiDevice.manufacturer}.${midiDevice.name}.midiDeviceControls`, midiDevice.midiDeviceControls);
+      await MidiDeviceConfig.save(`${escapePeriod(midiDevice.manufacturer)}.${escapePeriod(midiDevice.name)}.options`, midiDevice.options);
+      await MidiDeviceConfig.save(`${escapePeriod(midiDevice.manufacturer)}.${escapePeriod(midiDevice.name)}.midiDeviceControls`, midiDevice.midiDeviceControls);
     }
     this._onSaved();
   }
@@ -87,6 +104,22 @@ const MidiDeviceManager = class {
   saveDevice() {
 
   }
+
+  async midiDeviceControl_removeBinding() {
+
+  }
+
+  async midiDevice_removeMidiDeviceControl(MidiDeviceId, MidiDeviceControlId) {
+    for (var i = 0; i < this._midiDevices.length; i++) {
+      if (this._midiDevices[i].id == MidiDeviceId) {
+        this._midiDevices[i].deleteMidiDeviceControl(MidiDeviceControlId);
+        break;
+      }
+    }
+    await this.saveAll();
+  }
+
+
 
 
   get isTrainingMode() {
